@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import os
+import json
 
 # ---------- 🎯 Page Config ----------
 st.set_page_config(page_title="Insurance Q&A - HackRx", page_icon="📄")
@@ -32,35 +33,37 @@ if st.button("Get Answers 🚀"):
         st.warning("⚠️ Please upload a PDF and enter at least one question.")
     else:
         with st.spinner("🧠 Thinking... Getting answers from the policy..."):
-            # Save uploaded PDF
+            # Save uploaded PDF temporarily
             save_path = os.path.join(".", pdf_file.name)
             with open(save_path, "wb") as f:
                 f.write(pdf_file.getbuffer())
 
-            # Prepare API payload
+            # Prepare form-data for backend
             questions = [q.strip() for q in questions_input.strip().split("\n") if q.strip()]
-            payload = {
-                "documents": [pdf_file.name],
-                "questions": questions
-            }
+            with open(save_path, "rb") as pdf:
+                files = {"pdf": (pdf_file.name, pdf, "application/pdf")}
+                data = {"questions": json.dumps(questions)}
+                try:
+                    res = requests.post(
+                        "https://ayush018-hackrx-fastapi.hf.space/api/v1/hackrx/run",
+                        files=files,
+                        data=data
+                    )
+                    if res.status_code == 200:
+                        results = res.json()["answers"]
+                        st.success("✅ Answers retrieved!")
 
-            try:
-                res = requests.post("https://ayush018-hackrx-fastapi.hf.space/api/v1/hackrx/run", json=payload)
-                if res.status_code == 200:
-                    results = res.json()["answers"]
-                    st.success("✅ Answers retrieved!")
+                        # ---------- 📋 Display Answers ----------
+                        for item in results:
+                            st.markdown("### 📄 " + item["document"])
+                            st.markdown(f"**❓ Question:** {item['question']}")
+                            if item['answer'].startswith("❌"):
+                                st.error(f"🟥 {item['answer']}")
+                            else:
+                                st.info(f"🧠 {item['answer']}")
+                            st.markdown("---")
+                    else:
+                        st.error(f"❌ Backend error: {res.status_code}")
+                except Exception as e:
+                    st.error(f"❌ Failed to contact FastAPI backend: `{e}`")
 
-                    # ---------- 📋 Display Answers ----------
-                    for item in results:
-                        st.markdown("### 📄 " + item["document"])
-                        st.markdown(f"**❓ Question:** {item['question']}")
-                        if item['answer'].startswith("❌"):
-                            st.error(f"🟥 {item['answer']}")
-                        else:
-                            st.info(f"🧠 {item['answer']}")
-                        st.markdown("---")
-
-                else:
-                    st.error(f"❌ Backend error: {res.status_code}")
-            except Exception as e:
-                st.error(f"❌ Failed to contact FastAPI backend: `{e}`")
